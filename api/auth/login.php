@@ -7,21 +7,20 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 
-// =======================
-// HEADER
-// =======================
+// =====================================
+// CORS HEADERS (WAJIB UNTUK API)
+// =====================================
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Content-Type: application/json");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 
-// =======================
-// HANDLE OPTIONS
-// =======================
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+// Tangani Preflight Request dari Browser
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+
+header("Content-Type: application/json");
 
 // =======================
 // KONEKSI DATABASE
@@ -68,26 +67,34 @@ if (empty($email) || empty($password)) {
 // =======================
 // HASH PASSWORD
 // =======================
+// md5 digunakan jika saat register kamu juga memakai md5
 $hashedPassword = md5($password);
 
 // =======================
-// QUERY LOGIN
+// QUERY LOGIN (SUDAH DIUBAH KE MYSQLI)
 // =======================
 try {
 
-    $sql = "SELECT id, name, email, role
-            FROM users
-            WHERE email = :email
-            AND password = :password";
+    // Ubah :email dan :password menjadi tanda tanya (?) untuk MySQLi
+    $sql = "SELECT id, name, email, role 
+            FROM users 
+            WHERE email = ? 
+            AND password = ?";
 
-    $stmt = $conn->prepare($sql);
+    $stmt = mysqli_prepare($conn, $sql);
 
-    $stmt->bindParam(':email', $email);
-    $stmt->bindParam(':password', $hashedPassword);
+    if (!$stmt) {
+        throw new Exception("Gagal menyiapkan query database");
+    }
 
-    $stmt->execute();
+    // Bind parameter "ss" (String, String) untuk email dan password
+    mysqli_stmt_bind_param($stmt, "ss", $email, $hashedPassword);
 
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    mysqli_stmt_execute($stmt);
+
+    // Ambil hasil query
+    $result = mysqli_stmt_get_result($stmt);
+    $user = mysqli_fetch_assoc($result);
 
     // =======================
     // LOGIN SUCCESS
@@ -108,7 +115,7 @@ try {
         ]);
     }
 
-} catch (PDOException $e) {
+} catch (Exception $e) {
 
     echo json_encode([
         "status" => "error",

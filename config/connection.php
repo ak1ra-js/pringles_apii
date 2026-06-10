@@ -1,52 +1,27 @@
 <?php
 
-// =====================================
-// DEBUGGING (Matikan saat Production)
-// =====================================
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
-
-// =====================================
-// CORS HEADERS (Untuk akses API)
-// =====================================
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: *");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Content-Type: application/json");
-
-// =====================================
-// KREDENSIAL DATABASE RAILWAY
-// =====================================
-// Mengambil variabel secara dinamis dari Railway Environment
 $host = getenv("MYSQLHOST");
+$db   = getenv("MYSQLDATABASE");
 $user = getenv("MYSQLUSER");
 $pass = getenv("MYSQLPASSWORD");
 $port = getenv("MYSQLPORT");
 
-// UPDATE: Kita hardcode nama databasenya ke pringles_store
-// karena kamu mengimpor tabel-tabelnya ke database ini di TablePlus
-$db   = "pringles_store"; 
+try {
 
-// =====================================
-// KONEKSI MYSQL
-// =====================================
-$conn = new mysqli($host, $user, $pass, $db, $port);
+    $conn = new PDO(
+        "mysql:host=$host;port=$port;dbname=$db",
+        $user,
+        $pass
+    );
 
-// =====================================
-// ERROR KONEKSI
-// =====================================
-if ($conn->connect_error) {
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+} catch (PDOException $e) {
+
     die(json_encode([
         "status" => "error",
         "message" => "Koneksi database gagal",
-        "error" => $conn->connect_error
+        "error" => $e->getMessage()
     ]));
 }
-
-// =====================================
-// CHAR SET
-// =====================================
-// utf8mb4 direkomendasikan karena mendukung karakter penuh termasuk Emoji
-$conn->set_charset("utf8mb4");
-
 ?>

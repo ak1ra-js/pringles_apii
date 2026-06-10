@@ -1,10 +1,6 @@
 {
-<<<<<<< HEAD
-  "require": {
-    "ext-mysqli": "*"
-  }
+    "require": {
+        "php": "^8.1",
+        "ext-mysqli": "*"
+    }
 }
-=======
-  "require": {}
-}
->>>>>>> 21485ca0f257f3873f7effa4f31de6270d0c2b25

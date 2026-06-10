@@ -1,78 +1,57 @@
 <?php
 
-<<<<<<< HEAD
+// =====================================
+// DEBUGGING (Matikan saat Production)
+// =====================================
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
+// =====================================
+// CORS HEADERS (Untuk akses API)
+// =====================================
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Content-Type: application/json");
 
 // =====================================
-// DATABASE RAILWAY
+// KREDENSIAL DATABASE RAILWAY
 // =====================================
+// Mengambil variabel secara dinamis dari Railway Environment
+$host = getenv("MYSQLHOST");
+$user = getenv("MYSQLUSER");
+$pass = getenv("MYSQLPASSWORD");
+$db   = getenv("MYSQLDATABASE");
+$port = getenv("MYSQLPORT");
 
-$host = getenv("mysql.railway.internal");
-$user = getenv("root");
-$pass = getenv("cuLnucwlAmIbcVakpbasMFDSVyKclyMz");
-$db   = getenv("railway");
-$port = getenv("3306");
+// Jika Anda sedang testing di Localhost dan variabel di atas kosong,
+// Anda bisa menggunakan fallback (nilai cadangan) seperti ini:
+// $host = getenv("MYSQLHOST") ?: "localhost";
+// $user = getenv("MYSQLUSER") ?: "root";
+// $pass = getenv("MYSQLPASSWORD") ?: "";
+// $db   = getenv("MYSQLDATABASE") ?: "nama_db_lokal";
+// $port = getenv("MYSQLPORT") ?: "3306";
 
 // =====================================
 // KONEKSI MYSQL
 // =====================================
-=======
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
-
-$host = getenv("MYSQLHOST");
-$user = getenv("MYSQLUSER");
-$password = getenv("MYSQLPASSWORD");
-$database = getenv("MYSQLDATABASE");
-$port = getenv("MYSQLPORT");
->>>>>>> 21485ca0f257f3873f7effa4f31de6270d0c2b25
-
-$conn = new mysqli(
-    $host,
-    $user,
-<<<<<<< HEAD
-    $pass,
-    $db,
-    $port
-);
+$conn = new mysqli($host, $user, $pass, $db, $port);
 
 // =====================================
 // ERROR KONEKSI
 // =====================================
-
-=======
-    $password,
-    $database,
-    $port
-);
-
->>>>>>> 21485ca0f257f3873f7effa4f31de6270d0c2b25
 if ($conn->connect_error) {
-
     die(json_encode([
         "status" => "error",
-<<<<<<< HEAD
         "message" => "Koneksi database gagal",
         "error" => $conn->connect_error
     ]));
 }
 
 // =====================================
-// UTF8
+// CHAR SET
 // =====================================
-
-$conn->set_charset("utf8");
-
-?>
-=======
-        "message" => "Koneksi gagal: " . $conn->connect_error
-    ]));
-}
-
+// utf8mb4 direkomendasikan karena mendukung karakter penuh termasuk Emoji
 $conn->set_charset("utf8mb4");
 
 ?>
->>>>>>> 21485ca0f257f3873f7effa4f31de6270d0c2b25

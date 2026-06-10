@@ -1,54 +1,117 @@
 <?php
+// ==========================
+// HEADER CORS & JSON
+// ==========================
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: *");
-header("Access-Control-Allow-Methods: *");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Content-Type: application/json");
-?>
-<?php
-// Memanggil file koneksi database
+
+// Handle preflight request
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+// ==========================
+// KONEKSI DATABASE
+// ==========================
 require_once '../../config/connection.php';
 
-// Menangkap data JSON yang dikirim dari aplikasi Flutter
-$inputJSON = file_get_contents('php://input');
-$input = json_decode($inputJSON, TRUE);
-
-// Memastikan email dan password tidak kosong
-if (isset($input['email']) && isset($input['password'])) {
-    
-    // Mencegah SQL Injection sederhana
-    $email = $conn->real_escape_string($input['email']);
-    $password = $input['password'];
-    
-    // Mengenkripsi password inputan menjadi MD5 agar cocok dengan database
-    $hashed_password = md5($password);
-    
-    // Mencari user di database
-    $sql = "SELECT id, name, email, role FROM users WHERE email = '$email' AND password = '$hashed_password'";
-    $result = $conn->query($sql);
-    
-    if ($result->num_rows > 0) {
-        // Jika data ditemukan (Login Sukses)
-        $user_data = $result->fetch_assoc();
-        
-        echo json_encode([
-            "status" => "success",
-            "message" => "Login berhasil",
-            "data" => $user_data // Mengirim data (termasuk role) kembali ke Flutter
-        ]);
-    } else {
-        // Jika email atau password salah
-        echo json_encode([
-            "status" => "error",
-            "message" => "Email atau password salah!"
-        ]);
-    }
-} else {
-    // Jika Flutter tidak mengirimkan data email/password
+// Cek koneksi database
+if (!$conn) {
     echo json_encode([
         "status" => "error",
-        "message" => "Data tidak lengkap!"
+        "message" => "Koneksi database gagal"
+    ]);
+    exit();
+}
+
+// ==========================
+// AMBIL DATA JSON
+// ==========================
+$inputJSON = file_get_contents("php://input");
+$input = json_decode($inputJSON, true);
+
+// Cek JSON valid
+if (!$input) {
+    echo json_encode([
+        "status" => "error",
+        "message" => "Format JSON tidak valid"
+    ]);
+    exit();
+}
+
+// ==========================
+// VALIDASI INPUT
+// ==========================
+if (
+    !isset($input['email']) ||
+    !isset($input['password']) ||
+    empty(trim($input['email'])) ||
+    empty(trim($input['password']))
+) {
+    echo json_encode([
+        "status" => "error",
+        "message" => "Email dan password wajib diisi"
+    ]);
+    exit();
+}
+
+$email = trim($input['email']);
+$password = trim($input['password']);
+
+// ==========================
+// HASH PASSWORD
+// ==========================
+$hashed_password = md5($password);
+
+// ==========================
+// QUERY LOGIN
+// ==========================
+$sql = "SELECT id, name, email, role 
+        FROM users 
+        WHERE email = ? AND password = ?";
+
+$stmt = $conn->prepare($sql);
+
+if (!$stmt) {
+    echo json_encode([
+        "status" => "error",
+        "message" => "Prepare statement gagal"
+    ]);
+    exit();
+}
+
+$stmt->bind_param("ss", $email, $hashed_password);
+$stmt->execute();
+
+$result = $stmt->get_result();
+
+// ==========================
+// CEK LOGIN
+// ==========================
+if ($result->num_rows > 0) {
+
+    $user_data = $result->fetch_assoc();
+
+    echo json_encode([
+        "status" => "success",
+        "message" => "Login berhasil",
+        "data" => $user_data
+    ]);
+
+} else {
+
+    echo json_encode([
+        "status" => "error",
+        "message" => "Email atau password salah"
     ]);
 }
 
+// ==========================
+// CLOSE
+// ==========================
+$stmt->close();
 $conn->close();
 ?>

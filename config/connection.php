@@ -1,35 +1,39 @@
 <?php
 
 // =====================================
-// DEBUGGING (Matikan saat Production)
+// DEBUGGING (Matikan saat Production nanti)
 // =====================================
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 // =====================================
-// CORS HEADERS (Untuk akses API)
+// CORS HEADERS (BACKUP)
 // =====================================
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 header("Content-Type: application/json");
 
 // =====================================
 // KREDENSIAL DATABASE RAILWAY
 // =====================================
-// Mengambil variabel secara dinamis dari Railway Environment
 $host = getenv("MYSQLHOST");
 $user = getenv("MYSQLUSER");
 $pass = getenv("MYSQLPASSWORD");
 $port = getenv("MYSQLPORT");
 
-// Nama database yang kamu pakai di TablePlus untuk mengimport tabel
-$db   = "pringles_store"; 
+// Mengambil nama database dari Railway Environment (Otomatis)
+// Jika variabel di Railway kosong, fallback ke 'pringles_store'
+$db   = getenv("MYSQLDATABASE");
+if (empty($db)) {
+    $db = "pringles_store"; 
+}
 
 // =====================================
 // KONEKSI MYSQL
 // =====================================
-$conn = new mysqli($host, $user, $pass, $db, $port);
+// Menggunakan @ agar error bawaan PHP tidak merusak format JSON jika server down
+$conn = @new mysqli($host, $user, $pass, $db, $port);
 
 // =====================================
 // ERROR KONEKSI
@@ -45,7 +49,7 @@ if ($conn->connect_error) {
 // =====================================
 // CHAR SET
 // =====================================
-// utf8mb4 direkomendasikan karena mendukung karakter penuh termasuk Emoji
+// utf8mb4 direkomendasikan karena mendukung karakter penuh
 $conn->set_charset("utf8mb4");
 
 ?>

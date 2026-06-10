@@ -21,16 +21,11 @@ header("Content-Type: application/json");
 $host = getenv("MYSQLHOST");
 $user = getenv("MYSQLUSER");
 $pass = getenv("MYSQLPASSWORD");
-$db   = getenv("MYSQLDATABASE");
 $port = getenv("MYSQLPORT");
 
-// Jika Anda sedang testing di Localhost dan variabel di atas kosong,
-// Anda bisa menggunakan fallback (nilai cadangan) seperti ini:
-// $host = getenv("MYSQLHOST") ?: "localhost";
-// $user = getenv("MYSQLUSER") ?: "root";
-// $pass = getenv("MYSQLPASSWORD") ?: "";
-// $db   = getenv("MYSQLDATABASE") ?: "nama_db_lokal";
-// $port = getenv("MYSQLPORT") ?: "3306";
+// UPDATE: Kita hardcode nama databasenya ke pringles_store
+// karena kamu mengimpor tabel-tabelnya ke database ini di TablePlus
+$db   = "pringles_store"; 
 
 // =====================================
 // KONEKSI MYSQL

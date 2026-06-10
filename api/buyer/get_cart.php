@@ -1,17 +1,40 @@
 <?php
 
+// =====================================
+// CORS HEADERS (WAJIB UNTUK API)
+// =====================================
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: *");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+
+// Tangani Preflight Request dari Browser atau Frontend
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 header("Content-Type: application/json");
 
 require_once "../../config/connection.php";
 
 // =====================================
-// USER ID
+// AMBIL JSON
+// =====================================
+
+$data =
+    json_decode(
+        file_get_contents(
+            "php://input"
+        ),
+        true
+    );
+
+// =====================================
+// DATA
 // =====================================
 
 $userId =
-    $_GET['user_id'] ?? '';
+    $data['user_id'] ?? '';
 
 // =====================================
 // VALIDASI
@@ -31,129 +54,313 @@ if (empty($userId)) {
 }
 
 // =====================================
-// QUERY CART
+// START TRANSACTION
 // =====================================
 
-$query = "
-
-SELECT
-
-    cart.id AS cart_id,
-
-    cart.quantity,
-
-    products.id AS product_id,
-
-    products.name,
-
-    products.flavor,
-
-    products.price,
-
-    products.image_path,
-
-    products.stock
-
-FROM cart
-
-INNER JOIN products
-ON cart.product_id = products.id
-
-WHERE cart.user_id = ?
-
-ORDER BY cart.id DESC
-
-";
-
-$stmt =
-    mysqli_prepare(
-        $conn,
-        $query
-    );
-
-mysqli_stmt_bind_param(
-    $stmt,
-    "i",
-    $userId
+mysqli_begin_transaction(
+    $conn
 );
 
-mysqli_stmt_execute(
-    $stmt
-);
+try {
 
-$result =
-    mysqli_stmt_get_result(
-        $stmt
+    // =====================================
+    // AMBIL CART USER
+    // =====================================
+
+    $cartQuery = "
+
+    SELECT
+
+        cart.*,
+
+        products.name,
+
+        products.price,
+
+        products.stock
+
+    FROM cart
+
+    INNER JOIN products
+    ON cart.product_id = products.id
+
+    WHERE cart.user_id = ?
+
+    ";
+
+    $cartStmt =
+        mysqli_prepare(
+            $conn,
+            $cartQuery
+        );
+
+    mysqli_stmt_bind_param(
+        $cartStmt,
+        "i",
+        $userId
     );
 
-$cartItems = [];
+    mysqli_stmt_execute(
+        $cartStmt
+    );
 
-$totalAmount = 0;
+    $cartResult =
+        mysqli_stmt_get_result(
+            $cartStmt
+        );
 
-// =====================================
-// LOOP DATA
-// =====================================
+    $cartItems = [];
 
-while (
-    $row =
-        mysqli_fetch_assoc(
-            $result
+    $totalAmount = 0;
+
+    // =====================================
+    // VALIDASI CART
+    // =====================================
+
+    while (
+        $item =
+            mysqli_fetch_assoc(
+                $cartResult
+            )
+    ) {
+
+        // =====================================
+        // CEK STOCK
+        // =====================================
+
+        if (
+            $item['quantity']
+            >
+            $item['stock']
+        ) {
+
+            throw new Exception(
+                "Stock produk {$item['name']} tidak mencukupi"
+            );
+        }
+
+        $subtotal =
+            $item['price']
+            * $item['quantity'];
+
+        $totalAmount +=
+            $subtotal;
+
+        $cartItems[] =
+            $item;
+    }
+
+    // =====================================
+    // CART KOSONG
+    // =====================================
+
+    if (count($cartItems) <= 0) {
+
+        throw new Exception(
+            "Cart masih kosong"
+        );
+    }
+
+    // =====================================
+    // INSERT TRANSACTIONS
+    // =====================================
+
+    $transactionQuery = "
+
+    INSERT INTO transactions
+    (
+        user_id,
+        total_amount,
+        status
+    )
+    VALUES
+    (
+        ?,
+        ?,
+        'pending'
+    )
+
+    ";
+
+    $transactionStmt =
+        mysqli_prepare(
+            $conn,
+            $transactionQuery
+        );
+
+    mysqli_stmt_bind_param(
+
+        $transactionStmt,
+
+        "ii",
+
+        $userId,
+
+        $totalAmount
+    );
+
+    mysqli_stmt_execute(
+        $transactionStmt
+    );
+
+    $transactionId =
+        mysqli_insert_id(
+            $conn
+        );
+
+    // =====================================
+    // INSERT ITEMS
+    // =====================================
+
+    foreach (
+        $cartItems as $item
+    ) {
+
+        // =====================================
+        // INSERT TRANSACTION ITEMS
+        // =====================================
+
+        $itemQuery = "
+
+        INSERT INTO transaction_items
+        (
+            transaction_id,
+            product_id,
+            quantity,
+            price
         )
-) {
+        VALUES
+        (
+            ?,
+            ?,
+            ?,
+            ?
+        )
 
-    $subtotal =
-        $row['price']
-        * $row['quantity'];
+        ";
 
-    $totalAmount +=
-        $subtotal;
+        $itemStmt =
+            mysqli_prepare(
+                $conn,
+                $itemQuery
+            );
 
-    $cartItems[] = [
+        mysqli_stmt_bind_param(
 
-        "cart_id" =>
-            $row['cart_id'],
+            $itemStmt,
 
-        "product_id" =>
-            $row['product_id'],
+            "iiii",
 
-        "name" =>
-            $row['name'],
+            $transactionId,
 
-        "flavor" =>
-            $row['flavor'],
+            $item['product_id'],
 
-        "price" =>
-            (int)$row['price'],
+            $item['quantity'],
 
-        "quantity" =>
-            (int)$row['quantity'],
+            $item['price']
+        );
 
-        "subtotal" =>
-            $subtotal,
+        mysqli_stmt_execute(
+            $itemStmt
+        );
 
-        "stock" =>
-            (int)$row['stock'],
+        // =====================================
+        // REDUCE STOCK
+        // =====================================
 
-        "image_path" =>
-            $row['image_path']
-    ];
+        $newStock =
+            $item['stock']
+            - $item['quantity'];
+
+        $stockQuery = "
+
+        UPDATE products
+        SET stock=?
+        WHERE id=?
+
+        ";
+
+        $stockStmt =
+            mysqli_prepare(
+                $conn,
+                $stockQuery
+            );
+
+        mysqli_stmt_bind_param(
+
+            $stockStmt,
+
+            "ii",
+
+            $newStock,
+
+            $item['product_id']
+        );
+
+        mysqli_stmt_execute(
+            $stockStmt
+        );
+    }
+
+    // =====================================
+    // CLEAR CART
+    // =====================================
+
+    $clearCartQuery = "
+        DELETE FROM cart
+        WHERE user_id=?
+    ";
+
+    $clearStmt =
+        mysqli_prepare(
+            $conn,
+            $clearCartQuery
+        );
+
+    mysqli_stmt_bind_param(
+        $clearStmt,
+        "i",
+        $userId
+    );
+
+    mysqli_stmt_execute(
+        $clearStmt
+    );
+
+    // =====================================
+    // COMMIT
+    // =====================================
+
+    mysqli_commit($conn);
+
+    echo json_encode([
+
+        "status" => "success",
+
+        "message" =>
+            "Checkout berhasil",
+
+        "transaction_id" =>
+            $transactionId,
+
+        "total_amount" =>
+            $totalAmount
+    ]);
+
+} catch (Exception $e) {
+
+    // =====================================
+    // ROLLBACK
+    // =====================================
+
+    mysqli_rollback($conn);
+
+    echo json_encode([
+
+        "status" => "error",
+
+        "message" =>
+            $e->getMessage()
+    ]);
 }
-
-// =====================================
-// RESPONSE
-// =====================================
-
-echo json_encode([
-
-    "status" => "success",
-
-    "total_amount" =>
-        $totalAmount,
-
-    "total_items" =>
-        count($cartItems),
-
-    "data" =>
-        $cartItems
-]);
 ?>

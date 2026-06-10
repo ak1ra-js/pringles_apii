@@ -1,7 +1,18 @@
 <?php
 
+// =====================================
+// CORS HEADERS (WAJIB UNTUK API)
+// =====================================
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: *");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+
+// Tangani Preflight Request dari Browser atau Frontend
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 header("Content-Type: application/json");
 
 require_once "../../config/connection.php";
@@ -10,6 +21,7 @@ require_once "../../config/connection.php";
 // USER ID
 // =====================================
 
+// Karena ini file GET, data diambil dari URL parameter (?user_id=...)
 $userId =
     $_GET['user_id'] ?? '';
 

@@ -1,366 +1,230 @@
 <?php
 
 // =====================================
-// CORS HEADERS (WAJIB UNTUK API)
+// ERROR REPORTING
+// =====================================
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// =====================================
+// CORS HEADERS
 // =====================================
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Content-Type: application/json");
 
-// Tangani Preflight Request dari Browser atau Frontend
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+// =====================================
+// HANDLE OPTIONS
+// =====================================
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+
     http_response_code(200);
     exit();
 }
 
-header("Content-Type: application/json");
-
+// =====================================
+// CONNECTION
+// =====================================
 require_once "../../config/connection.php";
 
 // =====================================
-// AMBIL JSON
+// GET USER ID
 // =====================================
+$userId = 0;
 
-$data =
-    json_decode(
-        file_get_contents(
-            "php://input"
-        ),
-        true
-    );
+// GET METHOD
+if (isset($_GET['user_id'])) {
+
+    $userId =
+        intval($_GET['user_id']);
+}
+
+// POST JSON METHOD
+if ($userId <= 0) {
+
+    $data =
+        json_decode(
+            file_get_contents(
+                "php://input"
+            ),
+            true
+        );
+
+    $userId =
+        isset($data['user_id'])
+            ? intval($data['user_id'])
+            : 0;
+}
 
 // =====================================
-// DATA
+// VALIDATION
 // =====================================
-
-$userId =
-    $data['user_id'] ?? '';
-
-// =====================================
-// VALIDASI
-// =====================================
-
-if (empty($userId)) {
+if ($userId <= 0) {
 
     echo json_encode([
 
         "status" => "error",
 
         "message" =>
-            "User ID kosong"
+            "User ID tidak valid"
     ]);
 
     exit;
 }
 
 // =====================================
-// START TRANSACTION
+// QUERY CART
 // =====================================
+$query = "
 
-mysqli_begin_transaction(
-    $conn
-);
+SELECT
 
-try {
+    cart.id AS cart_id,
 
-    // =====================================
-    // AMBIL CART USER
-    // =====================================
+    cart.quantity,
 
-    $cartQuery = "
+    products.id AS product_id,
 
-    SELECT
+    products.name,
 
-        cart.*,
+    products.flavor,
 
-        products.name,
+    products.price,
 
-        products.price,
+    products.stock,
 
-        products.stock
+    products.image_path
 
-    FROM cart
+FROM cart
 
-    INNER JOIN products
-    ON cart.product_id = products.id
+INNER JOIN products
+ON cart.product_id = products.id
 
-    WHERE cart.user_id = ?
+WHERE cart.user_id = ?
 
-    ";
+ORDER BY cart.id DESC
 
-    $cartStmt =
-        mysqli_prepare(
-            $conn,
-            $cartQuery
-        );
+";
 
-    mysqli_stmt_bind_param(
-        $cartStmt,
-        "i",
-        $userId
+// =====================================
+// PREPARE
+// =====================================
+$stmt =
+    mysqli_prepare(
+        $conn,
+        $query
     );
 
-    mysqli_stmt_execute(
-        $cartStmt
-    );
-
-    $cartResult =
-        mysqli_stmt_get_result(
-            $cartStmt
-        );
-
-    $cartItems = [];
-
-    $totalAmount = 0;
-
-    // =====================================
-    // VALIDASI CART
-    // =====================================
-
-    while (
-        $item =
-            mysqli_fetch_assoc(
-                $cartResult
-            )
-    ) {
-
-        // =====================================
-        // CEK STOCK
-        // =====================================
-
-        if (
-            $item['quantity']
-            >
-            $item['stock']
-        ) {
-
-            throw new Exception(
-                "Stock produk {$item['name']} tidak mencukupi"
-            );
-        }
-
-        $subtotal =
-            $item['price']
-            * $item['quantity'];
-
-        $totalAmount +=
-            $subtotal;
-
-        $cartItems[] =
-            $item;
-    }
-
-    // =====================================
-    // CART KOSONG
-    // =====================================
-
-    if (count($cartItems) <= 0) {
-
-        throw new Exception(
-            "Cart masih kosong"
-        );
-    }
-
-    // =====================================
-    // INSERT TRANSACTIONS
-    // =====================================
-
-    $transactionQuery = "
-
-    INSERT INTO transactions
-    (
-        user_id,
-        total_amount,
-        status
-    )
-    VALUES
-    (
-        ?,
-        ?,
-        'pending'
-    )
-
-    ";
-
-    $transactionStmt =
-        mysqli_prepare(
-            $conn,
-            $transactionQuery
-        );
-
-    mysqli_stmt_bind_param(
-
-        $transactionStmt,
-
-        "ii",
-
-        $userId,
-
-        $totalAmount
-    );
-
-    mysqli_stmt_execute(
-        $transactionStmt
-    );
-
-    $transactionId =
-        mysqli_insert_id(
-            $conn
-        );
-
-    // =====================================
-    // INSERT ITEMS
-    // =====================================
-
-    foreach (
-        $cartItems as $item
-    ) {
-
-        // =====================================
-        // INSERT TRANSACTION ITEMS
-        // =====================================
-
-        $itemQuery = "
-
-        INSERT INTO transaction_items
-        (
-            transaction_id,
-            product_id,
-            quantity,
-            price
-        )
-        VALUES
-        (
-            ?,
-            ?,
-            ?,
-            ?
-        )
-
-        ";
-
-        $itemStmt =
-            mysqli_prepare(
-                $conn,
-                $itemQuery
-            );
-
-        mysqli_stmt_bind_param(
-
-            $itemStmt,
-
-            "iiii",
-
-            $transactionId,
-
-            $item['product_id'],
-
-            $item['quantity'],
-
-            $item['price']
-        );
-
-        mysqli_stmt_execute(
-            $itemStmt
-        );
-
-        // =====================================
-        // REDUCE STOCK
-        // =====================================
-
-        $newStock =
-            $item['stock']
-            - $item['quantity'];
-
-        $stockQuery = "
-
-        UPDATE products
-        SET stock=?
-        WHERE id=?
-
-        ";
-
-        $stockStmt =
-            mysqli_prepare(
-                $conn,
-                $stockQuery
-            );
-
-        mysqli_stmt_bind_param(
-
-            $stockStmt,
-
-            "ii",
-
-            $newStock,
-
-            $item['product_id']
-        );
-
-        mysqli_stmt_execute(
-            $stockStmt
-        );
-    }
-
-    // =====================================
-    // CLEAR CART
-    // =====================================
-
-    $clearCartQuery = "
-        DELETE FROM cart
-        WHERE user_id=?
-    ";
-
-    $clearStmt =
-        mysqli_prepare(
-            $conn,
-            $clearCartQuery
-        );
-
-    mysqli_stmt_bind_param(
-        $clearStmt,
-        "i",
-        $userId
-    );
-
-    mysqli_stmt_execute(
-        $clearStmt
-    );
-
-    // =====================================
-    // COMMIT
-    // =====================================
-
-    mysqli_commit($conn);
-
-    echo json_encode([
-
-        "status" => "success",
-
-        "message" =>
-            "Checkout berhasil",
-
-        "transaction_id" =>
-            $transactionId,
-
-        "total_amount" =>
-            $totalAmount
-    ]);
-
-} catch (Exception $e) {
-
-    // =====================================
-    // ROLLBACK
-    // =====================================
-
-    mysqli_rollback($conn);
+if (!$stmt) {
 
     echo json_encode([
 
         "status" => "error",
 
         "message" =>
-            $e->getMessage()
+            mysqli_error($conn)
     ]);
+
+    exit;
 }
+
+// =====================================
+// BIND
+// =====================================
+mysqli_stmt_bind_param(
+
+    $stmt,
+
+    "i",
+
+    $userId
+);
+
+// =====================================
+// EXECUTE
+// =====================================
+mysqli_stmt_execute(
+    $stmt
+);
+
+$result =
+    mysqli_stmt_get_result(
+        $stmt
+    );
+
+// =====================================
+// DATA
+// =====================================
+$cartItems = [];
+
+$totalPrice = 0;
+
+// =====================================
+// FETCH
+// =====================================
+while (
+    $row =
+        mysqli_fetch_assoc(
+            $result
+        )
+) {
+
+    $subtotal =
+        intval($row['price']) *
+        intval($row['quantity']);
+
+    $totalPrice +=
+        $subtotal;
+
+    $cartItems[] = [
+
+        "cart_id" =>
+            $row['cart_id'],
+
+        "product_id" =>
+            $row['product_id'],
+
+        "name" =>
+            $row['name'],
+
+        "flavor" =>
+            $row['flavor'],
+
+        "price" =>
+            intval($row['price']),
+
+        "quantity" =>
+            intval($row['quantity']),
+
+        "stock" =>
+            intval($row['stock']),
+
+        "subtotal" =>
+            $subtotal,
+
+        "image_path" =>
+            $row['image_path']
+    ];
+}
+
+// =====================================
+// RESPONSE
+// =====================================
+echo json_encode([
+
+    "status" => "success",
+
+    "message" =>
+        "Data cart berhasil diambil",
+
+    "total_price" =>
+        $totalPrice,
+
+    "total_items" =>
+        count($cartItems),
+
+    "data" =>
+        $cartItems
+]);
 ?>

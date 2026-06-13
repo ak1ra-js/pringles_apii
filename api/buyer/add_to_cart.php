@@ -1,54 +1,106 @@
 <?php
 
 // =====================================
-// CORS HEADERS (WAJIB UNTUK API)
+// ERROR REPORTING
+// =====================================
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// =====================================
+// CORS HEADERS
 // =====================================
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Content-Type: application/json");
 
-// Tangani Preflight Request dari Browser atau Frontend
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+// =====================================
+// HANDLE OPTIONS
+// =====================================
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+
     http_response_code(200);
     exit();
 }
 
-header("Content-Type: application/json");
-
+// =====================================
+// CONNECTION
+// =====================================
 require_once "../../config/connection.php";
 
 // =====================================
-// AMBIL JSON
+// GET JSON INPUT
 // =====================================
+$rawData =
+    file_get_contents(
+        "php://input"
+    );
 
 $data =
     json_decode(
-        file_get_contents(
-            "php://input"
-        ),
+        $rawData,
         true
     );
 
 // =====================================
-// DATA
+// DEBUG LOG
 // =====================================
+file_put_contents(
 
+    "debug_cart.txt",
+
+    "\n\n========== NEW REQUEST ==========\n",
+
+    FILE_APPEND
+);
+
+file_put_contents(
+
+    "debug_cart.txt",
+
+    "RAW JSON:\n" .
+    $rawData . "\n",
+
+    FILE_APPEND
+);
+
+// =====================================
+// GET DATA
+// =====================================
 $userId =
-    $data['user_id'] ?? '';
+    isset($data['user_id'])
+        ? intval($data['user_id'])
+        : 0;
 
 $productId =
-    $data['product_id'] ?? '';
+    isset($data['product_id'])
+        ? intval($data['product_id'])
+        : 0;
 
 $quantity =
-    $data['quantity'] ?? 1;
+    isset($data['quantity'])
+        ? intval($data['quantity'])
+        : 1;
 
 // =====================================
-// VALIDASI
+// SAVE DEBUG
 // =====================================
+file_put_contents(
 
+    "debug_cart.txt",
+
+    "USER ID: $userId\nPRODUCT ID: $productId\nQTY: $quantity\n",
+
+    FILE_APPEND
+);
+
+// =====================================
+// VALIDATION
+// =====================================
 if (
-    empty($userId) ||
-    empty($productId)
+    $userId <= 0 ||
+    $productId <= 0 ||
+    $quantity <= 0
 ) {
 
     echo json_encode([
@@ -56,18 +108,17 @@ if (
         "status" => "error",
 
         "message" =>
-            "Data cart tidak lengkap"
+            "Data cart tidak valid"
     ]);
 
     exit;
 }
 
 // =====================================
-// CEK PRODUK
+// CHECK PRODUCT
 // =====================================
-
 $productQuery =
-    "SELECT * FROM products WHERE id=?";
+    "SELECT * FROM products WHERE id=? LIMIT 1";
 
 $productStmt =
     mysqli_prepare(
@@ -76,8 +127,11 @@ $productStmt =
     );
 
 mysqli_stmt_bind_param(
+
     $productStmt,
+
     "i",
+
     $productId
 );
 
@@ -96,9 +150,8 @@ $product =
     );
 
 // =====================================
-// PRODUK TIDAK ADA
+// PRODUCT NOT FOUND
 // =====================================
-
 if (!$product) {
 
     echo json_encode([
@@ -113,10 +166,11 @@ if (!$product) {
 }
 
 // =====================================
-// STOCK HABIS
+// STOCK CHECK
 // =====================================
-
-if ($product['stock'] <= 0) {
+if (
+    intval($product['stock']) <= 0
+) {
 
     echo json_encode([
 
@@ -130,20 +184,20 @@ if ($product['stock'] <= 0) {
 }
 
 // =====================================
-// CEK CART EXIST
+// CHECK EXISTING CART
 // =====================================
-
-$checkCartQuery = "
+$checkQuery = "
     SELECT *
     FROM cart
     WHERE user_id=?
     AND product_id=?
+    LIMIT 1
 ";
 
 $checkStmt =
     mysqli_prepare(
         $conn,
-        $checkCartQuery
+        $checkQuery
     );
 
 mysqli_stmt_bind_param(
@@ -172,22 +226,21 @@ $existingCart =
     );
 
 // =====================================
-// JIKA SUDAH ADA
+// UPDATE CART
 // =====================================
-
 if ($existingCart) {
 
     $newQty =
-        $existingCart['quantity']
-        + $quantity;
+        intval(
+            $existingCart['quantity']
+        ) + $quantity;
 
     // =====================================
-    // CEK STOCK
+    // STOCK LIMIT
     // =====================================
-
     if (
         $newQty >
-        $product['stock']
+        intval($product['stock'])
     ) {
 
         echo json_encode([
@@ -232,12 +285,11 @@ if ($existingCart) {
 } else {
 
     // =====================================
-    // INSERT CART BARU
+    // NEW CART
     // =====================================
-
     if (
         $quantity >
-        $product['stock']
+        intval($product['stock'])
     ) {
 
         echo json_encode([
@@ -292,9 +344,24 @@ if ($existingCart) {
 }
 
 // =====================================
-// RESPONSE
+// MYSQL ERROR DEBUG
 // =====================================
+if (!$execute) {
 
+    file_put_contents(
+
+        "debug_cart.txt",
+
+        "MYSQL ERROR:\n" .
+        mysqli_error($conn) . "\n",
+
+        FILE_APPEND
+    );
+}
+
+// =====================================
+// SUCCESS RESPONSE
+// =====================================
 if ($execute) {
 
     echo json_encode([
@@ -302,7 +369,19 @@ if ($execute) {
         "status" => "success",
 
         "message" =>
-            "Produk berhasil ditambahkan ke cart"
+            "Produk berhasil ditambahkan ke cart",
+
+        "data" => [
+
+            "user_id" =>
+                $userId,
+
+            "product_id" =>
+                $productId,
+
+            "quantity" =>
+                $quantity
+        ]
     ]);
 
 } else {
@@ -312,7 +391,10 @@ if ($execute) {
         "status" => "error",
 
         "message" =>
-            "Gagal menambahkan ke cart"
+            "Gagal menambahkan ke cart",
+
+        "mysql_error" =>
+            mysqli_error($conn)
     ]);
 }
 ?>

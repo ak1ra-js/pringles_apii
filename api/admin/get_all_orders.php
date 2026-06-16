@@ -1,13 +1,9 @@
 <?php
 
-// =====================================
-// CORS HEADERS (WAJIB UNTUK API)
-// =====================================
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// Tangani Preflight Request dari Browser
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
@@ -17,106 +13,75 @@ header("Content-Type: application/json");
 
 require_once "../../config/connection.php";
 
-// =====================================
-// QUERY ALL TRANSACTIONS
-// =====================================
-
 $query = "
 
 SELECT
 
-    transactions.id,
+    t.id,
+    t.user_id,
+    t.total_amount,
+    t.status,
+    t.created_at,
 
-    transactions.user_id,
+    u.name AS customer_name,
+    u.email AS customer_email
 
-    transactions.total_amount,
+FROM transactions t
 
-    transactions.status,
+LEFT JOIN users u
+ON t.user_id = u.id
 
-    transactions.created_at,
-
-    users.name AS customer_name,
-
-    users.email AS customer_email
-
-FROM transactions
-
-INNER JOIN users
-ON transactions.user_id = users.id
-
-ORDER BY transactions.id DESC
+ORDER BY t.id DESC
 
 ";
 
-$result =
-    mysqli_query(
-        $conn,
-        $query
-    );
+$result = mysqli_query(
+    $conn,
+    $query
+);
 
 $orders = [];
 
-// =====================================
-// LOOP TRANSACTION
-// =====================================
-
-while (
-    $transaction =
-        mysqli_fetch_assoc(
-            $result
-        )
-) {
+while ($transaction = mysqli_fetch_assoc($result)) {
 
     $transactionId =
-        $transaction['id'];
-
-    // =====================================
-    // GET ITEMS
-    // =====================================
+        (int)$transaction['id'];
 
     $itemsQuery = "
 
     SELECT
 
-        transaction_items.quantity,
+        ti.quantity,
+        ti.price,
 
-        transaction_items.price,
+        p.name,
+        p.flavor,
+        p.image_path
 
-        products.name,
+    FROM transaction_items ti
 
-        products.flavor,
+    LEFT JOIN products p
+    ON ti.product_id = p.id
 
-        products.image_path
-
-    FROM transaction_items
-
-    INNER JOIN products
-    ON transaction_items.product_id = products.id
-
-    WHERE transaction_items.transaction_id = ?
+    WHERE ti.transaction_id = ?
 
     ";
 
-    $itemsStmt =
-        mysqli_prepare(
-            $conn,
-            $itemsQuery
-        );
+    $stmt = mysqli_prepare(
+        $conn,
+        $itemsQuery
+    );
 
     mysqli_stmt_bind_param(
-        $itemsStmt,
+        $stmt,
         "i",
         $transactionId
     );
 
-    mysqli_stmt_execute(
-        $itemsStmt
-    );
+    mysqli_stmt_execute($stmt);
 
     $itemsResult =
-        mysqli_stmt_get_result(
-            $itemsStmt
-        );
+        mysqli_stmt_get_result($stmt);
 
     $items = [];
 
@@ -146,22 +111,18 @@ while (
         ];
     }
 
-    // =====================================
-    // FINAL ARRAY
-    // =====================================
-
     $orders[] = [
 
-        "transaction_id" =>
-            $transaction['id'],
+        "id" =>
+            $transactionId,
 
         "user_id" =>
-            $transaction['user_id'],
+            (int)$transaction['user_id'],
 
-        "customer_name" =>
+        "buyer_name" =>
             $transaction['customer_name'],
 
-        "customer_email" =>
+        "email" =>
             $transaction['customer_email'],
 
         "total_amount" =>
@@ -178,14 +139,7 @@ while (
     ];
 }
 
-// =====================================
-// RESPONSE
-// =====================================
-
 echo json_encode([
-
     "status" => "success",
-
     "data" => $orders
 ]);
-?>

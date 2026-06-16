@@ -4,12 +4,10 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: *");
 header("Content-Type: application/json");
 
-$response = [];
-
 try {
 
     // =====================================
-    // CEK FILE IMAGE
+    // CEK FILE
     // =====================================
 
     if (!isset($_FILES['image'])) {
@@ -22,95 +20,142 @@ try {
         exit;
     }
 
+    $file = $_FILES['image'];
+
+    // =====================================
+    // CEK ERROR UPLOAD
+    // =====================================
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+
+        echo json_encode([
+            "status" => "error",
+            "message" => "Upload error",
+            "error_code" => $file['error']
+        ]);
+
+        exit;
+    }
+
     // =====================================
     // FOLDER UPLOAD
     // =====================================
 
-    $uploadDir = "../../uploads/";
+    $uploadDir = dirname(__DIR__, 2) . "/uploads/";
 
     // =====================================
     // BUAT FOLDER JIKA BELUM ADA
     // =====================================
 
-    if (!file_exists($uploadDir)) {
+    if (!is_dir($uploadDir)) {
 
         mkdir($uploadDir, 0777, true);
     }
 
     // =====================================
-    // AMBIL FILE
+    // VALIDASI EXTENSION
     // =====================================
 
-    $file = $_FILES['image'];
+    $allowedExtensions = [
+        'jpg',
+        'jpeg',
+        'png',
+        'webp'
+    ];
 
-    // =====================================
-    // EXTENSION
-    // =====================================
-
-    $extension = pathinfo(
-        $file['name'],
-        PATHINFO_EXTENSION
+    $extension = strtolower(
+        pathinfo(
+            $file['name'],
+            PATHINFO_EXTENSION
+        )
     );
 
+    if (!in_array(
+        $extension,
+        $allowedExtensions
+    )) {
+
+        echo json_encode([
+            "status" => "error",
+            "message" => "Format gambar tidak didukung"
+        ]);
+
+        exit;
+    }
+
     // =====================================
-    // RENAME FILE
+    // GENERATE NAMA FILE BARU
     // =====================================
 
     $newFileName =
         time() .
         "_" .
-        rand(1000, 9999) .
+        uniqid() .
         "." .
         $extension;
 
-    // =====================================
-    // PATH FINAL
-    // =====================================
-
     $destination =
-        $uploadDir . $newFileName;
+        $uploadDir .
+        $newFileName;
 
     // =====================================
-    // MOVE FILE
+    // SIMPAN FILE
     // =====================================
 
-    if (
-        move_uploaded_file(
-            $file['tmp_name'],
-            $destination
-        )
-    ) {
+    $uploaded = move_uploaded_file(
+        $file['tmp_name'],
+        $destination
+    );
+
+    if (!$uploaded) {
 
         echo json_encode([
-
-            "status" => "success",
-
-            "message" =>
-                "Upload berhasil",
-
-            "filename" =>
-                $newFileName
-        ]);
-
-    } else {
-
-        echo json_encode([
-
             "status" => "error",
-
-            "message" =>
-                "Gagal upload gambar"
+            "message" => "move_uploaded_file gagal",
+            "tmp_name" => $file['tmp_name'],
+            "destination" => $destination
         ]);
+
+        exit;
     }
 
-} catch (Exception $e) {
+    // =====================================
+    // CEK FILE BENAR-BENAR TERSIMPAN
+    // =====================================
+
+    if (!file_exists($destination)) {
+
+        echo json_encode([
+            "status" => "error",
+            "message" => "File tidak ditemukan setelah upload"
+        ]);
+
+        exit;
+    }
+
+    // =====================================
+    // SUCCESS
+    // =====================================
+
+    echo json_encode([
+
+        "status" => "success",
+
+        "message" => "Upload berhasil",
+
+        "filename" => $newFileName,
+
+        "path" => $destination,
+
+        "size" => filesize($destination)
+    ]);
+
+} catch (Throwable $e) {
 
     echo json_encode([
 
         "status" => "error",
 
-        "message" =>
-            $e->getMessage()
+        "message" => $e->getMessage()
     ]);
 }
-?>
